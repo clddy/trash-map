@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="이사 온 사람이 '언제 뭘 버리는지' 한 번에 — 지자체 공식 데이터 기반 쓰레기 배출요일 지도">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗑️</text></svg>">
+<title>우리 동네 쓰레기 배출요일 지도</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #1c2330;
+    --sub: #6b7280;
+    --line: #e5e8ee;
+    --accent: #0ea472;
+    --full: #0ea472;
+    --partial: #e8a13d;
+    --gap: #d95f5f;
+    --none: #d3d7df;
+    --sea: #eef1f5;
+    --chip: #f1f3f7;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "맑은 고딕", sans-serif;
+    background: var(--bg); color: var(--ink);
+    display: flex; flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── header ─────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 18px;
+    padding: 14px 24px; background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  header .logo { font-size: 22px; }
+  header h1 { font-size: 19px; font-weight: 800; letter-spacing: -0.4px; }
+  header .sub { font-size: 12.5px; color: var(--sub); margin-top: 2px; }
+  header .stats { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .stat {
+    background: var(--chip); border-radius: 10px; padding: 7px 13px;
+    text-align: center; line-height: 1.25;
+  }
+  .stat b { display: block; font-size: 16px; letter-spacing: -0.3px; }
+  .stat span { font-size: 11px; color: var(--sub); }
+
+  /* ── layout ─────────────────────────── */
+  main { flex: 1; display: flex; min-height: 0; }
+  #mapwrap { flex: 1; position: relative; min-width: 0; }
+  #map { width: 100%; height: 100%; display: block; cursor: default; }
+
+  /* breadcrumb */
+  #crumb {
+    position: absolute; top: 16px; left: 20px;
+    display: flex; align-items: center; gap: 4px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 8px 14px;
+    box-shadow: 0 2px 10px rgba(20,30,50,.06);
+    font-size: 14px; z-index: 5;
+  }
+  #crumb button {
+    border: 0; background: none; font: inherit; color: var(--accent);
+    font-weight: 700; cursor: pointer; padding: 2px 4px; border-radius: 6px;
+  }
+  #crumb button:hover { background: #e8f7f1; }
+  #crumb .sep { color: #c4c9d2; }
+  #crumb .here { font-weight: 800; padding: 2px 4px; }
+  #crumb .hint { color: var(--sub); font-size: 12px; margin-left: 8px; }
+
+  /* legend */
+  #legend {
+    position: absolute; left: 20px; bottom: 18px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 14px;
+    box-shadow: 0 2px 10px rgba(20,30,50,.06);
+    font-size: 12px; z-index: 5; display: flex; gap: 14px; flex-wrap: wrap;
+  }
+  #legend .k { display: flex; align-items: center; gap: 6px; color: var(--sub); }
+  #legend .sw { width: 12px; height: 12px; border-radius: 4px; }
+
+  /* tooltip */
+  #tip {
+    position: fixed; pointer-events: none; z-index: 50;
+    background: #1c2330; color: #fff; font-size: 12.5px;
+    padding: 6px 11px; border-radius: 8px; opacity: 0;
+    transform: translate(-50%, -140%); transition: opacity .12s;
+    white-space: nowrap;
+  }
+  #tip small { color: #9fe8cd; }
+
+  /* map shapes */
+  .prov { stroke: #fff; stroke-width: 1.2; cursor: pointer; transition: fill .18s; }
+  .muni { stroke: #fff; stroke-width: .7; cursor: pointer; transition: fill .18s, opacity .18s; }
+  .muni.dim { cursor: default; }
+  .shape-label {
+    font-weight: 700; fill: #3d4657; pointer-events: none;
+    text-anchor: middle; paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3;
+  }
+  #map .zoom-root {
+    transition: transform .72s cubic-bezier(.22,.61,.36,1);
+    transform-origin: 0 0;
+  }
+
+  /* ── side panel ─────────────────────── */
+  #panel {
+    width: 430px; flex: 0 0 430px; background: var(--panel);
+    border-left: 1px solid var(--line); overflow-y: auto;
+    padding: 26px 26px 40px;
+  }
+  #panel h2 { font-size: 24px; font-weight: 800; letter-spacing: -0.6px; }
+  #panel .region-sido { font-size: 13px; color: var(--sub); margin-bottom: 2px; }
+  .badge {
+    display: inline-block; font-size: 11.5px; font-weight: 700;
+    border-radius: 999px; padding: 4px 11px; margin: 10px 0 2px; color: #fff;
+  }
+  .badge.full { background: var(--full); }
+  .badge.partial { background: var(--partial); }
+  .badge.gap { background: var(--gap); }
+  .badge.none { background: #a7adba; }
+  .status-note { font-size: 13.5px; color: var(--sub); line-height: 1.55; margin: 8px 0 18px; }
+
+  .sec-title {
+    font-size: 12px; font-weight: 800; color: var(--sub);
+    letter-spacing: .08em; margin: 22px 0 10px;
+  }
+
+  /* weekly grid */
+  .week {
+    border: 1px solid var(--line); border-radius: 14px; overflow: hidden;
+    font-size: 12.5px;
+  }
+  .week .row { display: grid; grid-template-columns: 118px repeat(7, 1fr); }
+  .week .row + .row { border-top: 1px solid var(--line); }
+  .week .hd { background: #fafbfc; font-weight: 700; color: var(--sub); }
+  .week .cell {
+    padding: 9px 4px; text-align: center; position: relative;
+  }
+  .week .cell.today-col { background: #f0faf6; }
+  .week .hd .cell.today-col { color: var(--accent); font-weight: 800; }
+  .week .tname {
+    text-align: left; padding: 9px 10px; font-weight: 700; font-size: 12.5px;
+    display: flex; flex-direction: column; justify-content: center; line-height: 1.3;
+  }
+  .week .tname small { font-weight: 500; color: var(--sub); font-size: 10.5px; }
+  .dot {
+    display: inline-block; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .dot.v { background: #7c5cd6; }
+  .dot.bound {
+    background: none; border: 2px dashed #d0a35c; width: 11px; height: 11px;
+  }
+  .week .off { color: #d0d4dc; font-size: 11px; }
+
+  .time-note { font-size: 12px; color: var(--sub); margin-top: 8px; line-height: 1.6; }
+  .time-note b { color: var(--ink); }
+
+  /* zone picker */
+  .picker { display: flex; flex-direction: column; gap: 8px; }
+  .picker select, .picker input {
+    font: inherit; font-size: 14px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: #fff;
+    width: 100%; outline: none;
+  }
+  .picker select:focus, .picker input:focus { border-color: var(--accent); }
+  .zone-list {
+    max-height: 200px; overflow-y: auto; border: 1px solid var(--line);
+    border-radius: 10px;
+  }
+  .zone-item {
+    padding: 9px 13px; font-size: 13.5px; cursor: pointer;
+    border-bottom: 1px solid #f0f2f6;
+  }
+  .zone-item:last-child { border-bottom: 0; }
+  .zone-item:hover { background: #f5faf8; }
+  .zone-item.sel { background: #e8f7f1; font-weight: 700; color: #0b7d58; }
+  .zone-empty { padding: 14px; font-size: 13px; color: var(--sub); text-align: center; }
+
+  /* cards */
+  .card {
+    border: 1px solid var(--line); border-radius: 12px; padding: 13px 15px;
+    font-size: 13px; line-height: 1.6; margin-bottom: 8px; background: #fafbfc;
+  }
+  .card.warn { background: #fdf6ec; border-color: #f3dfc0; }
+  .card.danger { background: #fdf1f1; border-color: #f2d4d4; }
+  .card b { display: block; margin-bottom: 2px; }
+  .facts { list-style: none; }
+  .facts li {
+    font-size: 13px; line-height: 1.55; padding: 7px 0 7px 22px;
+    position: relative; border-bottom: 1px dashed #eceef3;
+  }
+  .facts li:last-child { border-bottom: 0; }
+  .facts li::before {
+    content: ""; position: absolute; left: 4px; top: 13px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  }
+  .contact-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; padding: 8px 2px; border-bottom: 1px dashed #eceef3;
+  }
+  .contact-row:last-child { border-bottom: 0; }
+  .contact-row b { font-weight: 600; }
+  .contact-row span { color: var(--sub); font-variant-numeric: tabular-nums; }
+
+  .intro-hint {
+    margin-top: 20px; padding: 16px; border-radius: 12px;
+    background: #eef8f4; color: #12694d; font-size: 13.5px; line-height: 1.65;
+  }
+  .intro-hint b { display: block; margin-bottom: 4px; font-size: 14.5px; }
+
+  .collector-card {
+    display: flex; flex-direction: column; gap: 2px;
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 15px; margin-bottom: 8px; font-size: 13.5px;
+  }
+  .collector-card b { font-size: 14px; }
+  .collector-card span { color: var(--sub); font-variant-numeric: tabular-nums; }
+
+  @media (max-width: 900px) {
+    main { flex-direction: column; }
+    #mapwrap { height: 54vh; flex: none; }
+    #panel { width: 100%; flex: 1; border-left: 0; border-top: 1px solid var(--line); }
+    header .stats { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🗑️</div>
+  <div>
+    <h1>우리 동네 쓰레기 배출요일 지도</h1>
+    <div class="sub">이사 온 사람이 "언제 뭘 버리는지" 한 번에 — 지자체 공식 데이터 기반</div>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<main>
+  <div id="mapwrap">
+    <div id="crumb"></div>
+    <svg id="map"></svg>
+    <div id="legend">
+      <span class="k"><span class="sw" style="background:var(--full)"></span>전수 구축</span>
+      <span class="k"><span class="sw" style="background:var(--partial)"></span>부분 구축</span>
+      <span class="k"><span class="sw" style="background:var(--gap)"></span>데이터 공백 확인</span>
+      <span class="k"><span class="sw" style="background:var(--none)"></span>조사 예정</span>
+    </div>
+  </div>
+  <aside id="panel"></aside>
+</main>
+
+<div id="tip"></div>
+
+<script src="lib/d3.v7.min.js"></script>
+<script src="lib/topojson-client.min.js"></script>
+<script src="data.js"></script>
+<script>
+const T = window.TRASH;
+const DAYS = ["일","월","화","수","목","금","토"];
+const TODAY = DAYS[new Date().getDay()];
+const BADGE_LABEL = { full:"전수 구축", partial:"부분 구축", gap:"데이터 공백 확인", none:"조사 예정" };
+const BADGE_FILL  = { full:"#35bd8d", partial:"#eeb35e", gap:"#e07f7f" };
+
+const svg = d3.select("#map");
+const gRoot = svg.append("g").attr("class", "zoom-root");
+const gProv = gRoot.append("g");
+const gMuni = gRoot.append("g");
+const gLabel = gRoot.append("g");
+const tip = d3.select("#tip");
+
+let W = 0, H = 0, path, projection;
+let provFeats = [], muniFeats = [];
+let state = { level: "nation", prov: null, muni: null };
+
+// ── stats chips ──
+d3.select("#stats").html(
+  `<div class="stat"><b>${T.stats.surveyed}곳</b><span>지자체 조사</span></div>` +
+  `<div class="stat"><b>${T.stats.built}곳</b><span>데이터 구축</span></div>` +
+  `<div class="stat"><b>${T.stats.zones.toLocaleString()}</b><span>마을·구역</span></div>` +
+  `<div class="stat"><b>${T.stats.rules.toLocaleString()}</b><span>배출 규칙</span></div>`
+);
+document.querySelector("header .sub").textContent += ` · 데이터 기준일 ${T.updated}`;
+
+Promise.all([
+  fetch("skorea_provinces_topo_simple.json").then(r => r.json()),
+  fetch("skorea_municipalities_topo_simple.json").then(r => r.json()),
+]).then(([pt, mt]) => {
+  provFeats = topojson.feature(pt, pt.objects.skorea_provinces_geo).features;
+  muniFeats = topojson.feature(mt, mt.objects.skorea_municipalities_geo).features;
+  init();
+  window.addEventListener("resize", init);
+});
+
+function init() {
+  const box = document.getElementById("mapwrap").getBoundingClientRect();
+  W = box.width; H = box.height;
+  svg.attr("viewBox", `0 0 ${W} ${H}`);
+  projection = d3.geoMercator();
+  projection.fitExtent([[24, 24], [W - 24, H - 24]], { type:"FeatureCollection", features: provFeats });
+  path = d3.geoPath(projection);
+  render();
+}
+
+function provHasCoverage(code) {
+  return Object.keys(T.coverage).some(k => k.startsWith(code));
+}
+function muniInfo(code) { return T.coverage[code] || null; }
+function muniFill(code) {
+  const c = muniInfo(code);
+  if (!c) return "var(--none)";
+  return BADGE_FILL[T.regions[c.region].badge] || "var(--none)";
+}
+
+// ── render map layers ──
+function render() {
+  gProv.selectAll("path").data(provFeats, d => d.properties.code).join("path")
+    .attr("class", "prov")
+    .attr("d", path)
+    .attr("fill", d => provHasCoverage(d.properties.code) ? "#cfe9de" : "#dde1e8")
+    .on("mousemove", (e, d) => showTip(e, d.properties.name,
+        provHasCoverage(d.properties.code) ? "클릭해서 확대" : "조사 예정 지역"))
+    .on("mouseleave", hideTip)
+    .on("click", (e, d) => { hideTip(); gotoProvince(d.properties.code); });
+
+  gMuni.selectAll("path").data(muniFeats, d => d.properties.code).join("path")
+    .attr("class", "muni")
+    .attr("d", path)
+    .attr("fill", d => muniFill(d.properties.code))
+    .style("display", "none")
+    .on("mousemove", (e, d) => {
+      const c = muniInfo(d.properties.code);
+      showTip(e, d.properties.name,
+        c ? BADGE_LABEL[T.regions[c.region].badge] + " — 클릭해서 배출요일 보기" : "조사 예정");
+    })
+    .on("mouseleave", hideTip)
+    .on("click", (e, d) => { hideTip(); gotoMuni(d.properties.code); });
+
+  svg.on("dblclick", () => { if (state.level !== "nation") gotoNation(); });
+  window.addEventListener("keydown", e => {
+    if (e.key === "Escape") {
+      if (state.level === "muni") gotoProvince(state.prov);
+      else if (state.level === "province") gotoNation();
+    }
+  });
+
+  applyState(false);
+}
+
+function showTip(e, name, sub) {
+  tip.style("opacity", 1).style("left", e.clientX + "px").style("top", e.clientY + "px")
+     .html(`${name}${sub ? `<br><small>${sub}</small>` : ""}`);
+}
+function hideTip() { tip.style("opacity", 0); }
+
+// ── navigation ──
+function gotoNation()  { state = { level:"nation", prov:null, muni:null }; applyState(true); }
+function gotoProvince(code) { state = { level:"province", prov:code, muni:null }; applyState(true); }
+function gotoMuni(code) {
+  state = { level:"muni", prov: code.slice(0,2), muni: code };
+  applyState(true);
+}
+
+let curK = 1;
+function setTransform(tx, ty, k) {
+  curK = k;
+  gRoot.style("transform", `translate(${tx}px, ${ty}px) scale(${k})`);
+  gRoot.selectAll(".prov").attr("stroke-width", 1.2 / k);
+  gRoot.selectAll(".muni").attr("stroke-width", 0.9 / k);
+}
+function zoomTo(feats) {
+  const fc = { type:"FeatureCollection", features: feats };
+  const [[x0,y0],[x1,y1]] = path.bounds(fc);
+  const k = Math.min(9, 0.92 / Math.max((x1-x0)/W, (y1-y0)/H));
+  setTransform(W/2 - k*(x0+x1)/2, H/2 - k*(y0+y1)/2, k);
+}
+
+function applyState(animate) {
+  const { level, prov, muni } = state;
+
+  if (level === "nation") {
+    gProv.selectAll("path").style("display", null)
+      .attr("fill", d => provHasCoverage(d.properties.code) ? "#cfe9de" : "#dde1e8");
+    gMuni.selectAll("path").style("display", "none").classed("dim", false).style("opacity", 1);
+    setTransform(0, 0, 1);
+    drawLabels(provFeats.filter(d => provHasCoverage(d.properties.code)), 13);
+  } else {
+    const inProv = muniFeats.filter(d => d.properties.code.startsWith(prov));
+    gProv.selectAll("path").style("display", d => d.properties.code === prov ? "none" : null)
+      .attr("fill", "#e7eaef");
+    gMuni.selectAll("path")
+      .style("display", d => d.properties.code.startsWith(prov) ? null : "none")
+      .classed("dim", d => !muniInfo(d.properties.code))
+      .style("opacity", d => {
+        if (level === "muni") return d.properties.code === muni ? 1 : 0.45;
+        return 1;
+      })
+      .attr("fill", d => {
+        const base = muniFill(d.properties.code);
+        if (level === "muni" && d.properties.code === muni && base === "var(--none)") return "#b9bfca";
+        return base;
+      });
+    const zoomFeats = level === "muni" ? inProv.filter(d => d.properties.code === muni) : inProv;
+    zoomTo(zoomFeats.length ? zoomFeats : inProv);
+    drawLabels(inProv.filter(d => muniInfo(d.properties.code) || level === "muni" && d.properties.code === muni), 0);
+  }
+  drawCrumb();
+  drawPanel();
+}
+
+function drawLabels(feats, fixedSize) {
+  const k = currentScale();
+  const ok = feats.filter(d => {
+    const c = path.centroid(d);
+    return isFinite(c[0]) && isFinite(c[1]);
+  });
+  gLabel.selectAll("text").data(ok, d => d.properties.code).join("text")
+    .attr("class", "shape-label")
+    .attr("transform", d => `translate(${path.centroid(d)})`)
+    .style("font-size", (fixedSize ? fixedSize : 12.5 / k) + "px")
+    .text(d => shortName(d.properties.name));
+}
+function currentScale() { return curK; }
+function shortName(n) {
+  return n.replace("고양시일산서구","일산서구").replace("고양시일산동구","일산동구")
+          .replace("고양시덕양구","덕양구").replace("특별자치","").replace("광역시","")
+          .replace("특별시","").replace("서울","서울");
+}
+
+function provName(code) {
+  const f = provFeats.find(d => d.properties.code === code);
+  return f ? shortName(f.properties.name) : code;
+}
+function muniName(code) {
+  const f = muniFeats.find(d => d.properties.code === code);
+  return f ? shortName(f.properties.name) : code;
+}
+
+// ── breadcrumb ──
+function drawCrumb() {
+  const el = d3.select("#crumb");
+  let html = `<button onclick="gotoNation()">🇰🇷 대한민국</button>`;
+  if (state.prov) html += `<span class="sep">›</span>` +
+    (state.level === "province"
+      ? `<span class="here">${provName(state.prov)}</span>`
+      : `<button onclick="gotoProvince('${state.prov}')">${provName(state.prov)}</button>`);
+  if (state.muni) html += `<span class="sep">›</span><span class="here">${muniName(state.muni)}</span>`;
+  html += `<span class="hint">${
+    state.level === "nation" ? "색이 있는 지역을 눌러보세요" :
+    state.level === "province" ? "시·군·구를 누르면 배출요일이 보입니다 (ESC: 뒤로)" : "ESC: 뒤로"
+  }</span>`;
+  el.html(html);
+}
+
+// ── panel ──
+function drawPanel() {
+  const p = d3.select("#panel");
+  if (state.level !== "muni") { p.html(introHTML()); return; }
+
+  const info = muniInfo(state.muni);
+  if (!info) {
+    p.html(`
+      <div class="region-sido">${provName(state.prov)}</div>
+      <h2>${muniName(state.muni)}</h2>
+      <span class="badge none">조사 예정</span>
+      <p class="status-note">아직 이 지역의 배출요일 데이터를 조사하지 않았습니다.<br>
+      지자체별로 공개 방식이 달라 순차적으로 넓혀가는 중입니다.</p>
+      <div class="intro-hint"><b>지금까지 확인한 패턴</b>
+      배출요일 공개 방식은 지자체마다 다릅니다 — 시청 게시판(김포), 첨부 HWP(고양),
+      수거업체 위임으로 데이터 부재(파주)까지. 조사한 5곳은 지도에서 색으로 표시됩니다.</div>`);
+    return;
+  }
+
+  const R = T.regions[info.region];
+  const partLabel = info.part ? ` <span style="font-size:14px;color:var(--sub)">· ${info.part}</span>` : "";
+  let html = `
+    <div class="region-sido">${R.sido}</div>
+    <h2>${R.name}${partLabel}</h2>
+    <span class="badge ${R.badge}">${BADGE_LABEL[R.badge]}</span>
+    <p class="status-note">${R.statusNote}</p>`;
+
+  // zone picker (지역 데이터가 구역 단위일 때)
+  const zones = zonesFor(R, info);
+  if (zones.length) {
+    html += `<div class="sec-title">📍 ${R.zoneLabel}</div><div class="picker" id="picker"></div>`;
+  }
+
+  html += `<div class="sec-title">🗓️ 배출 요일표</div><div id="week"></div><div id="timeNotes"></div>`;
+  html += `<div class="sec-title">✔️ 핵심 정보</div><ul class="facts">${R.facts.map(f=>`<li>${f}</li>`).join("")}</ul>`;
+  html += `<div class="sec-title">☎️ 문의</div>` +
+    Object.entries(R.contacts).map(([k,v]) => `<div class="contact-row"><b>${k}</b><span>${v}</span></div>`).join("");
+  p.html(html);
+
+  if (zones.length) buildPicker(R, info, zones);
+  else renderWeek(R, null);
+}
+
+function zonesFor(R, info) {
+  let zs = R.zones;
+  if (info.part) zs = zs.filter(z => z.g.startsWith(info.part));
+  return zs;
+}
+
+let pickerState = { group: null, query: "", zone: null };
+
+function buildPicker(R, info, zones) {
+  const groups = [...new Set(zones.map(z => z.g))];
+  pickerState = { group: groups[0], query: "", zone: null };
+  const picker = d3.select("#picker");
+  const gname = g => g.split("|").pop();
+
+  picker.html(`
+    ${groups.length > 1 ? `<select id="grpSel">${groups.map(g=>`<option value="${g}">${gname(g)}</option>`).join("")}</select>` : ""}
+    ${zones.length > 15 ? `<input id="zq" placeholder="마을·구역 이름 검색 (예: ${zones[0].l.slice(0,6)})">` : ""}
+    <div class="zone-list" id="zlist"></div>`);
+
+  d3.select("#grpSel").on("change", function() {
+    pickerState.group = this.value; pickerState.zone = null; renderZoneList(R, zones);
+  });
+  const zq = d3.select("#zq");
+  if (!zq.empty()) zq.on("input", function() {
+    pickerState.query = this.value.trim(); renderZoneList(R, zones);
+  });
+  renderZoneList(R, zones);
+}
+
+function renderZoneList(R, zones) {
+  let list = zones.filter(z => z.g === pickerState.group);
+  if (pickerState.query) {
+    list = zones.filter(z => (z.g + z.l).includes(pickerState.query));
+  }
+  const el = d3.select("#zlist");
+  if (!list.length) { el.html(`<div class="zone-empty">검색 결과가 없습니다</div>`); return; }
+  el.html(list.slice(0, 80).map((z,i) =>
+    `<div class="zone-item${z === pickerState.zone ? " sel" : ""}" data-i="${i}">${
+      pickerState.query ? `<small style="color:var(--sub)">${z.g.split("|").pop()} · </small>` : ""}${z.l}</div>`).join(""));
+  el.selectAll(".zone-item").on("click", function() {
+    pickerState.zone = list[+this.dataset.i];
+    el.selectAll(".zone-item").classed("sel", false);
+    d3.select(this).classed("sel", true);
+    renderWeek(R, pickerState.zone);
+  });
+  // 프레젠테이션 편의: 첫 항목 자동 선택
+  if (!pickerState.zone && list.length) {
+    pickerState.zone = list[0];
+    el.select(".zone-item").classed("sel", true);
+  }
+  renderWeek(R, pickerState.zone);
+}
+
+function renderWeek(R, zone) {
+  const rows = [];
+  for (const [key, t] of Object.entries(R.types)) {
+    if (t.unsupported) continue;
+    let days = (zone && zone.d && zone.d[key]) || (R.cityDays && R.cityDays[key]) || null;
+    let bound = !days && t.bound ? t.bound : null;
+    rows.push({ key, t, days, bound });
+  }
+
+  let html = `<div class="week">
+    <div class="row hd"><div class="cell tname">품목</div>${
+      DAYS.map(d=>`<div class="cell${d===TODAY?" today-col":""}">${d}</div>`).join("")}</div>`;
+
+  for (const r of rows) {
+    html += `<div class="row">
+      <div class="cell tname">${r.t.label}<small>${r.t.time || ""}</small></div>` +
+      DAYS.map(d => {
+        const on = r.days && r.days.includes(d);
+        const inBound = r.bound && r.bound.includes(d);
+        return `<div class="cell${d===TODAY?" today-col":""}">${
+          on ? `<span class="dot${r.key==="v"?" v":""}"></span>` :
+          inBound ? `<span class="dot bound" title="시가 고지한 범위 — 실제 요일은 업체 확인"></span>` :
+          `<span class="off">·</span>`}</div>`;
+      }).join("") + `</div>`;
+  }
+  html += `</div>`;
+  if (rows.some(r => r.bound)) {
+    html += `<div class="time-note" style="margin-top:6px">
+      <span class="dot bound" style="vertical-align:-2px"></span>
+      점선 = 시가 고지한 <b>범위</b>일 뿐, 실제 우리 골목 요일이 아닙니다</div>`;
+  }
+
+  // collector card (파주)
+  if (zone && zone.c) {
+    html += `<div class="card warn" style="margin-top:10px"><b>📞 우리 구역 담당 수거업체</b>
+      ${zone.c}<br><span style="color:var(--sub);font-size:12px">골목별 요일은 이 업체가 알고 있습니다 — 한 번만 확인하면 됩니다</span></div>`;
+  }
+
+  d3.select("#week").html(html);
+
+  // notes
+  let notes = "";
+  for (const [key, t] of Object.entries(R.types)) {
+    if (t.unsupported) notes += `<div class="card danger"><b>${t.label} — 데이터 없음</b>${t.unsupported}</div>`;
+    else if (t.note) notes += `<div class="card"><b>${t.label}</b>${t.note}</div>`;
+  }
+  const blackouts = [...new Set(Object.values(R.types).filter(t=>t.blackout).map(t=>t.blackout))];
+  if (blackouts.length)
+    notes += `<div class="time-note">⛔ ${blackouts.join(" · ")}</div>`;
+  d3.select("#timeNotes").html(notes);
+}
+
+function introHTML() {
+  return `
+    <div class="region-sido">프로젝트</div>
+    <h2>배출요일, 왜 지도인가</h2>
+    <p class="status-note">이사 온 사람은 "언제 뭘 버리는지" 모릅니다.
+    배출요일은 시·군·구는 물론 <b>마을 단위</b>로도 다르고,
+    같은 동네에서도 품목(일반·재활용·음식물)마다 요일이 갈립니다.</p>
+
+    <div class="sec-title">📊 조사 결과 한눈에</div>
+    <ul class="facts">
+      <li><b>김포시</b> — 자연마을 529곳 전수. 품목 간 요일이 다른 마을이 67%</li>
+      <li><b>고양시</b> — 음식물 문전수거 51개 구역, 통·블럭 단위 요일제</li>
+      <li><b>파주시</b> — 요일 데이터가 시에 없음. 수거업체 13곳이 보유</li>
+      <li><b>관악구</b> — 비닐·투명페트병은 목요일에만 수거</li>
+      <li><b>광진구</b> — 공휴일 전날 배출 금지 → 연휴엔 3일 연속 금지 발생</li>
+    </ul>
+
+    <div class="intro-hint"><b>👆 지도에서 색이 있는 지역을 눌러보세요</b>
+    도(道)를 누르면 확대되고, 시·군·구를 누르면 그 동네의
+    실제 배출 요일표가 나옵니다.</div>`;
+}
+</script>
+</body>
+</html>
