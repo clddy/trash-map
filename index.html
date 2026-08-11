@@ -120,6 +120,7 @@
   .badge.full { background: var(--full); }
   .badge.partial { background: var(--partial); }
   .badge.gap { background: var(--gap); }
+  .badge.surveyed { background: #7f95ab; }
   .badge.none { background: #a7adba; }
   .status-note { font-size: 13.5px; color: var(--sub); line-height: 1.55; margin: 8px 0 18px; }
 
@@ -151,6 +152,7 @@
     background: var(--accent);
   }
   .dot.v { background: #7c5cd6; }
+  .dot.n { background: #8a94a6; }
   .dot.bound {
     background: none; border: 2px dashed #d0a35c; width: 11px; height: 11px;
   }
@@ -246,6 +248,7 @@
       <span class="k"><span class="sw" style="background:var(--full)"></span>전수 구축</span>
       <span class="k"><span class="sw" style="background:var(--partial)"></span>부분 구축</span>
       <span class="k"><span class="sw" style="background:var(--gap)"></span>데이터 공백 확인</span>
+      <span class="k"><span class="sw" style="background:#9db4c9"></span>조사 완료·구축 대기</span>
       <span class="k"><span class="sw" style="background:var(--none)"></span>조사 예정</span>
     </div>
   </div>
@@ -261,8 +264,16 @@
 const T = window.TRASH;
 const DAYS = ["일","월","화","수","목","금","토"];
 const TODAY = DAYS[new Date().getDay()];
-const BADGE_LABEL = { full:"전수 구축", partial:"부분 구축", gap:"데이터 공백 확인", none:"조사 예정" };
-const BADGE_FILL  = { full:"#35bd8d", partial:"#eeb35e", gap:"#e07f7f" };
+const BADGE_LABEL = { full:"전수 구축", partial:"부분 구축", gap:"데이터 공백 확인",
+                      surveyed:"조사 완료", none:"조사 예정" };
+const BADGE_FILL  = { full:"#35bd8d", partial:"#eeb35e", gap:"#e07f7f", surveyed:"#9db4c9" };
+const SURVEY_LABEL = { target:"요일 데이터 확인됨 — 구축 대기", thin:"시간·금지일만 공개 (요일 미공개)",
+                       gap:"요일 데이터가 시에 없음 (업체 위임)", todo:"조사 예정" };
+
+// 코드 -> 조사만 된 지자체명
+const SURVEY_BY_CODE = {};
+for (const [name, codes] of Object.entries(T.surveyCodes || {}))
+  for (const c of codes) if (T.surveyed[name]) SURVEY_BY_CODE[c] = name;
 
 const svg = d3.select("#map");
 const gRoot = svg.append("g").attr("class", "zoom-root");
@@ -305,13 +316,16 @@ function init() {
 }
 
 function provHasCoverage(code) {
-  return Object.keys(T.coverage).some(k => k.startsWith(code));
+  return Object.keys(T.coverage).some(k => k.startsWith(code))
+      || Object.keys(SURVEY_BY_CODE).some(k => k.startsWith(code));
 }
 function muniInfo(code) { return T.coverage[code] || null; }
 function muniFill(code) {
   const c = muniInfo(code);
-  if (!c) return "var(--none)";
-  return BADGE_FILL[T.regions[c.region].badge] || "var(--none)";
+  if (c) return BADGE_FILL[T.regions[c.region].badge] || "var(--none)";
+  const s = SURVEY_BY_CODE[code] && T.surveyed[SURVEY_BY_CODE[code]];
+  if (s && s.status !== "todo") return BADGE_FILL.surveyed;
+  return "var(--none)";
 }
 
 // ── render map layers ──
@@ -331,9 +345,10 @@ function render() {
     .attr("fill", d => muniFill(d.properties.code))
     .style("display", "none")
     .on("mousemove", (e, d) => {
-      const c = muniInfo(d.properties.code);
-      showTip(e, d.properties.name,
-        c ? BADGE_LABEL[T.regions[c.region].badge] + " — 클릭해서 배출요일 보기" : "조사 예정");
+      const code = d.properties.code, c = muniInfo(code);
+      const sub = c ? BADGE_LABEL[T.regions[c.region].badge] + " — 클릭해서 배출요일 보기"
+                : SURVEY_BY_CODE[code] ? "조사 완료 — 클릭해서 확인 내용 보기" : "조사 예정";
+      showTip(e, d.properties.name, sub);
     })
     .on("mouseleave", hideTip)
     .on("click", (e, d) => { hideTip(); gotoMuni(d.properties.code); });
@@ -424,9 +439,10 @@ function drawLabels(feats, fixedSize) {
 }
 function currentScale() { return curK; }
 function shortName(n) {
-  return n.replace("고양시일산서구","일산서구").replace("고양시일산동구","일산동구")
-          .replace("고양시덕양구","덕양구").replace("특별자치","").replace("광역시","")
-          .replace("특별시","").replace("서울","서울");
+  // '수원시장안구' 같은 붙임 표기에서 구만 남긴다
+  const m = n.match(/^(.+?시)(.+구)$/);
+  if (m) return m[2];
+  return n.replace("특별자치","").replace("광역시","").replace("특별시","");
 }
 
 function provName(code) {
@@ -460,18 +476,7 @@ function drawPanel() {
   if (state.level !== "muni") { p.html(introHTML()); return; }
 
   const info = muniInfo(state.muni);
-  if (!info) {
-    p.html(`
-      <div class="region-sido">${provName(state.prov)}</div>
-      <h2>${muniName(state.muni)}</h2>
-      <span class="badge none">조사 예정</span>
-      <p class="status-note">아직 이 지역의 배출요일 데이터를 조사하지 않았습니다.<br>
-      지자체별로 공개 방식이 달라 순차적으로 넓혀가는 중입니다.</p>
-      <div class="intro-hint"><b>지금까지 확인한 패턴</b>
-      배출요일 공개 방식은 지자체마다 다릅니다 — 시청 게시판(김포), 첨부 HWP(고양),
-      수거업체 위임으로 데이터 부재(파주)까지. 조사한 5곳은 지도에서 색으로 표시됩니다.</div>`);
-    return;
-  }
+  if (!info) { p.html(surveyedHTML(state.muni)); return; }
 
   const R = T.regions[info.region];
   const partLabel = info.part ? ` <span style="font-size:14px;color:var(--sub)">· ${info.part}</span>` : "";
@@ -498,9 +503,11 @@ function drawPanel() {
 }
 
 function zonesFor(R, info) {
-  let zs = R.zones;
-  if (info.part) zs = zs.filter(z => z.g.startsWith(info.part));
-  return zs;
+  // 구역 그룹이 '구' 이름으로 나뉜 지역(고양)만 구 단위로 거른다.
+  // 부천처럼 그룹이 수거 요일로 나뉜 곳은 걸러내면 안 된다.
+  if (!info.part) return R.zones;
+  const byGu = R.zones.filter(z => z.g.startsWith(info.part));
+  return byGu.length ? byGu : R.zones;
 }
 
 let pickerState = { group: null, query: "", zone: null };
@@ -570,7 +577,7 @@ function renderWeek(R, zone) {
         const on = r.days && r.days.includes(d);
         const inBound = r.bound && r.bound.includes(d);
         return `<div class="cell${d===TODAY?" today-col":""}">${
-          on ? `<span class="dot${r.key==="v"?" v":""}"></span>` :
+          on ? `<span class="dot${r.key==="v"?" v":r.key==="n"?" n":""}"></span>` :
           inBound ? `<span class="dot bound" title="시가 고지한 범위 — 실제 요일은 업체 확인"></span>` :
           `<span class="off">·</span>`}</div>`;
       }).join("") + `</div>`;
@@ -602,6 +609,50 @@ function renderWeek(R, zone) {
   d3.select("#timeNotes").html(notes);
 }
 
+function surveyedHTML(code) {
+  const name = SURVEY_BY_CODE[code];
+  const s = name ? T.surveyed[name] : null;
+  const head = `<div class="region-sido">${provName(state.prov)}</div>
+                <h2>${muniName(code)}</h2>`;
+
+  if (!s) return head + `
+    <span class="badge none">조사 예정</span>
+    <p class="status-note">아직 이 지역의 배출요일 데이터를 조사하지 않았습니다.</p>
+    <div class="intro-hint"><b>지자체마다 공개 방식이 다릅니다</b>
+    시청 게시판(김포·안성), 첨부 HWP(고양), 수거업체 위임으로 데이터 부재(파주)까지.
+    그래서 한 곳씩 직접 확인하며 넓혀가는 중입니다.</div>`;
+
+  const DAYS_LABEL = { general: "일반쓰레기", food: "음식물", recycle: "재활용품", bulky: "대형폐기물" };
+  const isTodo = s.status === "todo";
+  let html = head + `<span class="badge ${isTodo ? "none" : "surveyed"}">${isTodo ? "조사 예정" : "조사 완료"}</span>
+    <p class="status-note">${SURVEY_LABEL[s.status] || ""}</p>`;
+
+  const rows = [];
+  if (s.days) for (const [k, v] of Object.entries(s.days))
+    if (v && k !== "note") rows.push([DAYS_LABEL[k] || k, v]);
+  if (s.time) rows.push(["배출 시간", s.time]);
+  if (s.blackout) rows.push(["배출 금지", s.blackout]);
+
+  if (rows.length) {
+    html += `<div class="sec-title">📋 확인된 내용</div>` +
+      rows.map(([k, v]) => `<div class="contact-row"><b>${k}</b><span style="max-width:62%;text-align:right">${v}</span></div>`).join("");
+  }
+  if (s.days && s.days.note)
+    html += `<div class="card" style="margin-top:10px">${s.days.note}</div>`;
+
+  const cls = s.status === "gap" ? "danger" : s.status === "thin" ? "warn" : "";
+  html += `<div class="sec-title">🔎 왜 아직 못 만들었나</div>
+    <div class="card ${cls}">${
+      s.status === "gap" ? "요일 데이터를 시가 보유하지 않습니다. 민간 수거업체가 갖고 있어 앱이 채울 수 없습니다."
+      : s.status === "thin" ? "배출 시간과 금지일은 공개돼 있지만 <b>품목별 요일</b>이 공개돼 있지 않습니다. 시청 확인이 필요합니다."
+      : s.status === "target" ? "요일 데이터가 존재하는 것을 확인했습니다. 수집·정규화만 하면 바로 구축됩니다."
+      : "조사 예정입니다."}</div>`;
+
+  if (s.note) html += `<div class="card"><b>출처</b>${s.note}</div>`;
+  if (s.contact) html += `<div class="contact-row"><b>문의</b><span>${s.contact}</span></div>`;
+  return html;
+}
+
 function introHTML() {
   return `
     <div class="region-sido">프로젝트</div>
@@ -610,14 +661,20 @@ function introHTML() {
     배출요일은 시·군·구는 물론 <b>마을 단위</b>로도 다르고,
     같은 동네에서도 품목(일반·재활용·음식물)마다 요일이 갈립니다.</p>
 
-    <div class="sec-title">📊 조사 결과 한눈에</div>
+    <div class="sec-title">📊 경기도 31개 시군 전수 조사</div>
     <ul class="facts">
-      <li><b>김포시</b> — 자연마을 529곳 전수. 품목 간 요일이 다른 마을이 67%</li>
+      <li><b>안성시</b> — 구역 549곳. 소각용·음식물·재활용·매립용이 <b>각각 다른 요일</b></li>
+      <li><b>김포시</b> — 자연마을 529곳. 품목 간 요일이 다른 마을이 67%</li>
       <li><b>고양시</b> — 음식물 문전수거 51개 구역, 통·블럭 단위 요일제</li>
       <li><b>파주시</b> — 요일 데이터가 시에 없음. 수거업체 13곳이 보유</li>
-      <li><b>관악구</b> — 비닐·투명페트병은 목요일에만 수거</li>
-      <li><b>광진구</b> — 공휴일 전날 배출 금지 → 연휴엔 3일 연속 금지 발생</li>
+      <li><b>구리시</b> — 금·토요일 배출 시 과태료. 계절별로 배출 시간이 다름</li>
+      <li><b>양주시</b> — 공휴일 전날부터 다음날까지 금지 (최고 100만원 과태료)</li>
     </ul>
+
+    <div class="sec-title">🧭 지자체마다 공개 방식이 다르다</div>
+    <div class="card">같은 경기도인데 <b>김포는 시청 게시판</b>에 마을 단위로 다 올려두고,
+    <b>고양은 첨부 HWP 파일</b> 안에만 있고, <b>파주는 아예 시가 갖고 있지 않습니다.</b>
+    그래서 전국 API 하나로는 풀리지 않고 한 곳씩 직접 확인해야 합니다.</div>
 
     <div class="intro-hint"><b>👆 지도에서 색이 있는 지역을 눌러보세요</b>
     도(道)를 누르면 확대되고, 시·군·구를 누르면 그 동네의
