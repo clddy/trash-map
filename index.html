@@ -176,8 +176,9 @@
   }
   .zone-item {
     padding: 9px 13px; font-size: 13.5px; cursor: pointer;
-    border-bottom: 1px solid #f0f2f6;
+    border-bottom: 1px solid #f0f2f6; line-height: 1.45;
   }
+  .zone-item small { font-size: 11px; }
   .zone-item:last-child { border-bottom: 0; }
   .zone-item:hover { background: #f5faf8; }
   .zone-item.sel { background: #e8f7f1; font-weight: 700; color: #0b7d58; }
@@ -540,12 +541,14 @@ let pickerState = { group: null, query: "", zone: null };
 
 function buildPicker(R, info, zones) {
   const groups = [...new Set(zones.map(z => z.g))];
-  pickerState = { group: groups[0], query: "", zone: null };
+  // 구역이 몇 개 안 되면 드롭다운으로 감추지 말고 한 화면에 다 보여준다
+  const flat = zones.length <= 8;
+  pickerState = { group: flat ? null : groups[0], query: "", zone: null, flat };
   const picker = d3.select("#picker");
   const gname = g => g.split("|").pop();
 
   picker.html(`
-    ${groups.length > 1 ? `<select id="grpSel">${groups.map(g=>`<option value="${g}">${gname(g)}</option>`).join("")}</select>` : ""}
+    ${(!flat && groups.length > 1) ? `<select id="grpSel">${groups.map(g=>`<option value="${g}">${gname(g)}</option>`).join("")}</select>` : ""}
     ${zones.length > 15 ? `<input id="zq" placeholder="마을·구역 이름 검색 (예: ${zones[0].l.slice(0,6)})">` : ""}
     <div class="zone-list" id="zlist"></div>`);
 
@@ -560,15 +563,16 @@ function buildPicker(R, info, zones) {
 }
 
 function renderZoneList(R, zones) {
-  let list = zones.filter(z => z.g === pickerState.group);
+  let list = pickerState.flat ? zones : zones.filter(z => z.g === pickerState.group);
   if (pickerState.query) {
     list = zones.filter(z => (z.g + z.l).includes(pickerState.query));
   }
   const el = d3.select("#zlist");
   if (!list.length) { el.html(`<div class="zone-empty">검색 결과가 없습니다</div>`); return; }
+  const showGroup = pickerState.query || pickerState.flat;
   el.html(list.slice(0, 80).map((z,i) =>
     `<div class="zone-item${z === pickerState.zone ? " sel" : ""}" data-i="${i}">${
-      pickerState.query ? `<small style="color:var(--sub)">${z.g.split("|").pop()} · </small>` : ""}${z.l}</div>`).join(""));
+      showGroup ? `<small style="color:var(--accent);font-weight:700">${z.g.split("|").pop()}</small><br>` : ""}${z.l}</div>`).join(""));
   el.selectAll(".zone-item").on("click", function() {
     pickerState.zone = list[+this.dataset.i];
     el.selectAll(".zone-item").classed("sel", false);
@@ -687,21 +691,23 @@ function introHTML() {
     배출요일은 시·군·구는 물론 <b>마을 단위</b>로도 다르고,
     같은 동네에서도 품목(일반·재활용·음식물)마다 요일이 갈립니다.</p>
 
-    <div class="sec-title">📊 경기도 31개 시군 전수 조사 완료</div>
+    <div class="sec-title">📊 서울 25개 구 · 경기 31개 시군 전수 조사</div>
     <ul class="facts">
       <li><b>안성시</b> — 구역 549곳. 소각용·음식물·재활용·매립용이 <b>각각 다른 요일</b></li>
       <li><b>김포시</b> — 자연마을 529곳. 품목 간 요일이 다른 마을이 67%</li>
       <li><b>가평군</b> — 「가」·「나」 권역에서 <b>재활용이 종량제와 정반대 요일</b></li>
+      <li><b>서초구</b> — 폐비닐·투명페트병 요일이 동별로 <b>목 / 금</b>으로 갈린다</li>
+      <li><b>마포구</b> — 서울 대부분이 목요일인데 <b>마포만 수요일</b></li>
       <li><b>의정부시</b> — 금요일엔 <b>음식물만</b> 버릴 수 있다</li>
-      <li><b>구리시</b> — 금·토요일 배출 시 과태료. 계절별로 배출 시간이 다름</li>
-      <li><b>양주시</b> — 공휴일 전날부터 다음날까지 금지 (최고 100만원 과태료)</li>
+      <li><b>중구</b> — 명동은 금지일이 없고, 나머지 동은 토 또는 일요일</li>
       <li><b>파주·남양주·하남</b> — 요일 데이터가 시에 없음. 수거업체가 보유</li>
     </ul>
 
-    <div class="sec-title">🧭 지자체마다 공개 방식이 다르다</div>
+    <div class="sec-title">🧭 지역마다 공개 방식이 다르다</div>
     <div class="card">같은 경기도인데 <b>김포는 시청 게시판</b>에 마을 단위로 다 올려두고,
     <b>고양은 첨부 HWP 파일</b> 안에만 있고, <b>파주는 아예 시가 갖고 있지 않습니다.</b>
-    그래서 전국 API 하나로는 풀리지 않고 한 곳씩 직접 확인해야 합니다.</div>
+    서울은 자치구마다 <b>폐비닐·투명페트병 지정 요일</b>을 따로 두는데, 이걸 놓치면
+    그날 내놓은 걸 수거해 가지 않습니다. 전국 API 하나로는 풀리지 않는 이유입니다.</div>
 
     <div class="intro-hint"><b>👆 지도에서 색이 있는 지역을 눌러보세요</b>
     도(道)를 누르면 확대되고, 시·군·구를 누르면 그 동네의
