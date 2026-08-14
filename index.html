@@ -278,6 +278,9 @@ const SURVEY_BY_CODE = {};
 for (const [name, codes] of Object.entries(T.surveyCodes || {}))
   for (const c of codes) if (T.surveyed[name]) SURVEY_BY_CODE[c] = name;
 
+// facts 안의 **강조** 표기를 굵게
+const md = s => String(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+
 const svg = d3.select("#map");
 const gRoot = svg.append("g").attr("class", "zoom-root");
 const gProv = gRoot.append("g");
@@ -506,7 +509,8 @@ function drawPanel() {
       html += `<div class="sec-title">📞 ${R.zoneLabel}</div>` +
         zs.map(z => `<div class="collector-card"><b>${z.l}</b><span>${z.c}</span></div>`).join("");
     }
-    html += `<div class="sec-title">✔️ 확인한 사실</div><ul class="facts">${R.facts.map(f=>`<li>${f}</li>`).join("")}</ul>`;
+    html += `<div class="sec-title">✔️ 확인한 사실</div><ul class="facts">${
+      R.facts.map(f=>`<li>${md(f)}</li>`).join("")}</ul>`;
     html += `<div class="sec-title">☎️ 문의</div>` +
       Object.entries(R.contacts).map(([k,v]) => `<div class="contact-row"><b>${k}</b><span>${v}</span></div>`).join("");
     p.html(html);
@@ -520,7 +524,8 @@ function drawPanel() {
   }
 
   html += `<div class="sec-title">🗓️ 배출 요일표</div><div id="week"></div><div id="timeNotes"></div>`;
-  html += `<div class="sec-title">✔️ 핵심 정보</div><ul class="facts">${R.facts.map(f=>`<li>${f}</li>`).join("")}</ul>`;
+  html += `<div class="sec-title">✔️ 핵심 정보</div><ul class="facts">${
+    R.facts.map(f=>`<li>${md(f)}</li>`).join("")}</ul>`;
   html += `<div class="sec-title">☎️ 문의</div>` +
     Object.entries(R.contacts).map(([k,v]) => `<div class="contact-row"><b>${k}</b><span>${v}</span></div>`).join("");
   p.html(html);
