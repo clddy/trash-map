@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0ea472">
+<title>오늘 뭐 버리지</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗑️</text></svg>">
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#fff; --ink:#1b2230; --sub:#6b7280; --line:#e6e9ef;
+    --accent:#0ea472; --accent-soft:#e8f7f1; --warn:#e8a13d; --danger:#d95f5f;
+    --vinyl:#7c5cd6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    background:var(--bg);color:var(--ink);display:flex;flex-direction:column;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{flex:1;overflow-y:auto;padding-bottom:82px}
+  .wrap{max-width:520px;margin:0 auto;padding:16px}
+
+  /* ── 상단 ── */
+  header{
+    background:var(--accent);color:#fff;padding:calc(16px + env(safe-area-inset-top)) 16px 18px;
+  }
+  header .loc{font-size:12.5px;opacity:.85}
+  header h1{font-size:21px;font-weight:800;letter-spacing:-.4px;margin-top:2px}
+  header .date{font-size:12.5px;opacity:.9;margin-top:4px}
+  header button{
+    background:rgba(255,255,255,.18);border:0;color:#fff;font:inherit;font-size:12.5px;
+    padding:6px 12px;border-radius:999px;cursor:pointer;margin-top:10px;
+  }
+
+  /* ── 오늘 카드 ── */
+  .today{
+    background:var(--card);border-radius:18px;padding:20px;margin-top:-10px;
+    box-shadow:0 4px 18px rgba(20,30,50,.07);
+  }
+  .today .big{font-size:19px;font-weight:800;letter-spacing:-.4px;line-height:1.4}
+  .today .big.none{color:var(--sub);font-weight:700;font-size:17px}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+  .chip{
+    background:var(--accent-soft);color:#0b7d58;font-size:13px;font-weight:700;
+    padding:7px 13px;border-radius:999px;
+  }
+  .chip.v{background:#efeaff;color:#5b3fb0}
+  .chip.off{background:#fdf1f1;color:#b04141}
+  .today .sub{font-size:13px;color:var(--sub);margin-top:12px;line-height:1.6}
+
+  /* ── 알림 목록 ── */
+  .sec{font-size:12px;font-weight:800;color:var(--sub);letter-spacing:.06em;margin:22px 0 9px}
+  .alert{
+    background:var(--card);border-radius:14px;padding:14px 16px;margin-bottom:8px;
+    border-left:4px solid var(--accent);
+  }
+  .alert.notice{border-left-color:var(--danger)}
+  .alert.warn-ahead{border-left-color:var(--warn)}
+  .alert .t{font-size:14.5px;font-weight:700;line-height:1.45}
+  .alert .b{font-size:13px;color:var(--sub);margin-top:5px;line-height:1.55}
+  .alert .when{font-size:11.5px;color:var(--accent);font-weight:800;margin-bottom:3px}
+  .alert.notice .when{color:var(--danger)}
+  .alert.warn-ahead .when{color:var(--warn)}
+  .alert .flag{
+    font-size:11.5px;color:#9a6b1f;background:#fdf6ec;border-radius:7px;
+    padding:6px 9px;margin-top:8px;line-height:1.5;
+  }
+
+  /* ── 주간표 ── */
+  .week{background:var(--card);border-radius:14px;overflow:hidden;font-size:12.5px}
+  .week .row{display:grid;grid-template-columns:96px repeat(7,1fr)}
+  .week .row+.row{border-top:1px solid var(--line)}
+  .week .hd{background:#fafbfc;font-weight:700;color:var(--sub)}
+  .week .cell{padding:9px 2px;text-align:center}
+  .week .cell.t{background:var(--accent-soft)}
+  .week .hd .cell.t{color:var(--accent);font-weight:800}
+  .week .nm{
+    text-align:left;padding:9px 11px;font-weight:700;font-size:12.5px;
+    display:flex;flex-direction:column;justify-content:center;line-height:1.3;
+  }
+  .week .nm small{font-weight:500;color:var(--sub);font-size:10px}
+  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--accent)}
+  .dot.v{background:var(--vinyl)}
+  .off{color:#d3d7de;font-size:11px}
+
+  .card{
+    background:var(--card);border-radius:14px;padding:14px 16px;
+    font-size:13px;line-height:1.6;margin-bottom:8px;
+  }
+  .card.danger{background:#fdf1f1}
+  .card.warn{background:#fdf6ec}
+  .card b{display:block;margin-bottom:3px}
+  .row2{display:flex;justify-content:space-between;align-items:center;
+        font-size:13px;padding:10px 2px;border-bottom:1px dashed var(--line)}
+  .row2:last-child{border-bottom:0}
+  .row2 span{color:var(--sub);font-variant-numeric:tabular-nums}
+
+  /* ── 하단 탭 ── */
+  nav{
+    position:fixed;left:0;right:0;bottom:0;background:var(--card);
+    border-top:1px solid var(--line);display:flex;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  nav button{
+    flex:1;border:0;background:none;font:inherit;padding:11px 0 13px;
+    color:var(--sub);font-size:11px;cursor:pointer;
+  }
+  nav button .i{display:block;font-size:19px;margin-bottom:3px}
+  nav button.on{color:var(--accent);font-weight:800}
+
+  /* ── 설정 ── */
+  select,input,button.big{
+    font:inherit;font-size:15px;padding:12px 13px;border:1px solid var(--line);
+    border-radius:11px;background:#fff;width:100%;outline:none;color:var(--ink);
+  }
+  select:focus,input:focus{border-color:var(--accent)}
+  label.f{display:block;font-size:12.5px;font-weight:700;color:var(--sub);margin:14px 0 6px}
+  button.big{
+    background:var(--accent);color:#fff;border:0;font-weight:800;cursor:pointer;
+    padding:14px;margin-top:16px;
+  }
+  button.big.ghost{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+  button.big:disabled{background:#c8cdd6;cursor:default}
+  .zlist{max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:11px;background:#fff}
+  .zitem{padding:11px 13px;font-size:13.5px;border-bottom:1px solid #f1f3f7;cursor:pointer;line-height:1.45}
+  .zitem:last-child{border-bottom:0}
+  .zitem.sel{background:var(--accent-soft);font-weight:700;color:#0b7d58}
+  .zitem small{display:block;font-size:11px;color:var(--accent);font-weight:700}
+  .hint{font-size:12px;color:var(--sub);margin-top:8px;line-height:1.6}
+  .empty{padding:40px 20px;text-align:center;color:var(--sub);font-size:14px;line-height:1.7}
+</style>
+</head>
+<body>
+<header id="hd"></header>
+<div id="app"><div class="wrap" id="view"></div></div>
+<nav id="nav"></nav>
+
+<script src="data.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
