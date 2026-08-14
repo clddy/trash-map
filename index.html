@@ -261,7 +261,12 @@
 
 <script src="lib/d3.v7.min.js"></script>
 <script src="lib/topojson-client.min.js"></script>
-<script src="data.js"></script>
+<!-- data.js는 배포마다 바뀌는데 GitHub Pages가 캐시를 오래 물고 있어,
+     날짜 쿼리를 붙여 새 데이터가 즉시 반영되게 한다 -->
+<script>
+  document.write('<script src="data.js?v=' +
+    new Date().toISOString().slice(0, 10) + '"><\/script>');
+</script>
 <script>
 const T = window.TRASH;
 const DAYS = ["일","월","화","수","목","금","토"];
