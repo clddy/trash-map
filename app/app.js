@@ -25,6 +25,48 @@ function myRules() {
   return list;
 }
 
+/* ── 전국 통합 검색 ──────────────────────────────────────────────
+ * 시·도 → 시·군·구 → 동네 3단계 드롭다운은 이 앱에서 가장 번거로운 지점이다.
+ * 김포는 마을이 410개, 안성은 549개라 목록을 훑는 게 현실적이지 않다.
+ * 그래서 "우리 동네 이름"만 치면 전국에서 바로 찾게 한다.
+ * 주소검색 API 없이 이미 가진 데이터만으로 되는 일이다.
+ */
+let SEARCH_INDEX = null;
+
+function buildIndex() {
+  if (SEARCH_INDEX) return SEARCH_INDEX;
+  const idx = [];
+  for (const r of D.regions) {
+    const zs = r.zones.filter(z => z.id !== "all" && z.id !== "*");
+    if (!zs.length) {
+      idx.push({ rid: r.id, zid: "all", region: `${r.sido} ${r.name}`,
+                 label: "전 지역", group: "", hay: r.name + r.sido,
+                 hasDays: r.rules.some(x => x.days) });
+      continue;
+    }
+    for (const z of zs) {
+      idx.push({ rid: r.id, zid: z.id, region: `${r.sido} ${r.name}`,
+                 label: z.label, group: z.group || "",
+                 hay: r.name + z.label + (z.group || ""),
+                 hasDays: r.rules.some(x => x.days &&
+                          (x.zoneId === z.id || x.zoneId === "*" || x.zoneId === "all")) });
+    }
+  }
+  SEARCH_INDEX = idx;
+  return idx;
+}
+
+function searchZones(q) {
+  q = q.trim();
+  if (q.length < 2) return [];
+  const idx = buildIndex();
+  // 요일 데이터가 있는 곳을 먼저, 그 다음 짧은 라벨(더 정확한 매칭) 순
+  return idx
+    .filter(e => e.hay.includes(q))
+    .sort((a, b) => (b.hasDays - a.hasDays) || (a.label.length - b.label.length))
+    .slice(0, 60);
+}
+
 /* ── 화면: 오늘 ── */
 function viewToday() {
   const R = region(), rules = myRules();
@@ -123,7 +165,16 @@ function viewSetup() {
   for (const r of D.regions) (bySido[r.sido] ||= []).push(r);
   const R = region();
 
-  let h = `<label class="f">1. 시·도</label>
+  // 검색이 기본, 드롭다운은 못 찾을 때의 대안
+  let h = `<label class="f">우리 동네 이름으로 찾기</label>
+    <input id="gq" placeholder="예: 주안8동, 정릉4동, 대룡리" value="${(S._q || "").replace(/"/g, "&quot;")}">
+    <div class="hint">동·리·마을 이름을 두 글자 이상 입력하세요. 전국에서 찾습니다.</div>
+    <div id="gres"></div>
+
+    <div style="height:1px;background:var(--line);margin:24px 0 4px"></div>
+    <div class="hint" style="margin-bottom:2px">못 찾으시겠으면 아래에서 직접 고르세요</div>
+
+    <label class="f">1. 시·도</label>
     <select id="sido">${Object.keys(bySido).map(s =>
       `<option${R && R.sido === s ? " selected" : ""}>${s}</option>`).join("")}</select>
 
@@ -150,6 +201,31 @@ function viewSetup() {
 function bindSetup() {
   const bySido = {};
   for (const r of D.regions) (bySido[r.sido] ||= []).push(r);
+
+  // ── 전국 통합 검색 ──
+  const gq = $("gq"), gres = $("gres");
+  const drawSearch = () => {
+    const q = gq.value;
+    S._q = q;
+    const hits = searchZones(q);
+    if (q.trim().length < 2) { gres.innerHTML = ""; return; }
+    if (!hits.length) {
+      gres.innerHTML = `<div class="hint" style="margin-top:10px">
+        '${q}'로 찾은 곳이 없습니다. 아래에서 직접 골라주세요.</div>`;
+      return;
+    }
+    gres.innerHTML = `<div class="zlist" style="margin-top:10px">` + hits.map((e, i) =>
+      `<div class="zitem" data-i="${i}">
+        <small>${e.region}${e.group ? " · " + e.group : ""}${e.hasDays ? "" : " · 요일 데이터 없음"}</small>
+        ${e.label}</div>`).join("") + `</div>`;
+    gres.querySelectorAll(".zitem").forEach(n => n.onclick = () => {
+      const e = hits[+n.dataset.i];
+      S.regionId = e.rid; S.zoneId = e.zid; delete S._q;
+      save(); tab = "today"; render();
+    });
+  };
+  gq.oninput = drawSearch;
+  drawSearch();
 
   const sido = $("sido"), sgg = $("sgg");
   const fillSgg = () => {
@@ -209,10 +285,20 @@ function viewNotify() {
       앱처럼 아이콘이 생깁니다.
     </div>
 
-    <div class="sec">⚠️ 알아두실 것</div>
+    <div class="sec">⚠️ 알림의 한계 (솔직하게)</div>
+    <div class="card warn">
+      <b>이 앱은 "매일 저녁 7시 알림"을 보장하지 못합니다.</b>
+      웹앱은 브라우저가 깨워줄 때만 알림을 보낼 수 있고, 그 시점을 앱이 정할 수 없습니다.<br><br>
+      그래서 지금은 <b>앱을 열면 그날 알림이 항상 보이도록</b> 만들어 뒀고,
+      브라우저가 백그라운드로 깨워주면 그때 알림도 함께 보냅니다.<br><br>
+      정확한 시각 알림과 홈 화면 위젯은 <b>안드로이드 앱으로 만들어야</b> 됩니다.
+      지금 버전은 요일 데이터와 알림 문구가 제대로인지 확인하는 단계입니다.
+    </div>
+
+    <div class="sec">⚠️ 데이터에 대하여</div>
     <div class="card warn">
       배출요일은 <b>지자체가 바꿀 수 있습니다.</b> 이 앱의 데이터 기준일은
-      <b>${D.updated}</b>이고, 이상하면 아래 담당 부서에 확인해주세요.<br>
+      <b>${D.updated}</b>이고, 이상하면 정보 탭의 담당 부서에 확인해주세요.<br>
       음력 공휴일(설·추석 등)은 아직 검증 전이라, 그 기간 알림은 보내지 않습니다.
     </div>`;
 }
@@ -270,5 +356,32 @@ function render() {
   }
 }
 
+/* ── 알림 연동 ──────────────────────────────────────────────────
+ * 웹은 예약 알림을 보장하지 못한다(그래서 결국 네이티브가 필요하다).
+ * 대신 앱을 열 때마다 오늘치 알림을 서비스워커에 넘겨두고,
+ * 브라우저가 백그라운드로 깨워주면 그때 발송한다.
+ */
+async function syncPending(reg) {
+  if (!S.regionId || !S.zoneId) return;
+  const items = alertsFor(myRules(), new Date(), D.holidays)
+    .filter(a => !a.warn)          // 확신도 낮은 건 안 보낸다
+    .map(a => ({ title: a.title, body: a.body }));
+  const payload = { date: iso(new Date()), items };
+  reg.active?.postMessage({ type: "pending", payload });
+
+  // 하루 한 번 깨워달라고 등록 (허락 여부는 브라우저가 정한다)
+  try {
+    if ("periodicSync" in reg) {
+      const st = await navigator.permissions.query({ name: "periodic-background-sync" });
+      if (st.state === "granted")
+        await reg.periodicSync.register("daily-check", { minInterval: 12 * 60 * 60 * 1000 });
+    }
+  } catch (_) { /* 미지원 브라우저 — 앱을 열면 보이니 문제없다 */ }
+}
+
 render();
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js")
+    .then(reg => navigator.serviceWorker.ready.then(() => syncPending(reg)))
+    .catch(() => {});
+}
